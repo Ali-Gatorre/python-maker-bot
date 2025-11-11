@@ -1,8 +1,10 @@
 {
   "responses": {
-    "je vais bien merci": "tant mieux",
-    "bien et toi ?": "tout roule, merci.",
+    "tu me conseille un jeu ?": "Valorantr !!!",
+    "": "/",
     "comment tu vas ?": "Bien et toi.",
-    "bonsoir": "salut à toi,comment vas tu ?"
+    "bonsoir": "salut à toi,comment vas tu ?",
+    "je vais bien merci": "tant mieux",
+    "bien et toi ?": "tout roule, merci."
   }
 }

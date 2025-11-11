@@ -2,16 +2,15 @@ use std::io::{self, Write};
 use std::fs;
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
+use rand::seq::SliceRandom;
 
-/// Structure représentant la mémoire du chatbot.
-/// Elle associe des phrases d'entrée à des réponses apprises.
+/// Structure de mémoire pour stocker les phrases apprises.
 #[derive(Serialize, Deserialize)]
 struct Memory {
     responses: HashMap<String, String>,
 }
 
 impl Memory {
-    /// Charge la mémoire depuis le fichier JSON, ou crée une mémoire vide si le fichier n'existe pas.
     fn load() -> Self {
         fs::read_to_string("memory.json")
             .ok()
@@ -19,17 +18,28 @@ impl Memory {
             .unwrap_or(Self { responses: HashMap::new() })
     }
 
-    /// Sauvegarde la mémoire actuelle dans le fichier JSON.
     fn save(&self) {
         let _ = fs::write("memory.json", serde_json::to_string_pretty(self).unwrap());
+    }
+
+    fn clear(&mut self) {
+        self.responses.clear();
+        self.save();
     }
 }
 
 fn main() {
-    println!("RustBot v0.3 – Chatbot avec mémoire persistante");
-    println!("Tapez 'quit' pour quitter.\n");
+    println!("RustBot v1.0 – Chatbot complet avec apprentissage et commandes");
+    println!("Commandes disponibles : /save, /clear, /help, quit\n");
 
     let mut memory = Memory::load();
+
+    let greetings = [
+        "Bonjour, comment allez-vous ?",
+        "Content de vous revoir.",
+        "Je suis prêt à discuter.",
+    ];
+    println!("RustBot : {}", greetings.choose(&mut rand::thread_rng()).unwrap());
 
     loop {
         print!("Vous : ");
@@ -39,10 +49,27 @@ fn main() {
         io::stdin().read_line(&mut input).unwrap();
         let input = input.trim().to_lowercase();
 
-        if input == "quit" {
-            println!("RustBot : Au revoir !");
-            memory.save();
-            break;
+        match input.as_str() {
+            "quit" => {
+                println!("RustBot : Au revoir !");
+                memory.save();
+                break;
+            }
+            "/save" => {
+                memory.save();
+                println!("RustBot : Mémoire sauvegardée.");
+                continue;
+            }
+            "/clear" => {
+                memory.clear();
+                println!("RustBot : Mémoire effacée.");
+                continue;
+            }
+            "/help" => {
+                println!("Commandes : /save, /clear, /help, quit");
+                continue;
+            }
+            _ => {}
         }
 
         if let Some(reply) = memory.responses.get(&input) {
@@ -59,7 +86,7 @@ fn main() {
             memory.responses.insert(input.clone(), new_reply.clone());
             memory.save();
 
-            println!("RustBot : Très bien, je répondrai désormais '{}' à '{}'.", new_reply, input);
+            println!("RustBot : D'accord, je répondrai '{}' lorsque vous direz '{}'.", new_reply, input);
         }
     }
 }
