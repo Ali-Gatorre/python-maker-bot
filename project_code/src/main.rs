@@ -5,6 +5,10 @@ use serde::Serialize;
 use serde_json::Value;
 use std::env;
 
+mod api;
+mod python_exec;
+mod interface;
+
 #[derive(Serialize)]
 struct HFRequest {
     inputs: String,
