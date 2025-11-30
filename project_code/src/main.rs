@@ -1,92 +1,38 @@
-use std::io::{self, Write};
-use std::fs;
-use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
-use rand::seq::SliceRandom;
+use anyhow::{Context, Result};
+use dotenvy::dotenv;
+use reqwest::Client;
+use serde::Serialize;
+use serde_json::Value;
+use std::env;
 
-/// Structure de mémoire pour stocker les phrases apprises.
-#[derive(Serialize, Deserialize)]
-struct Memory {
-    responses: HashMap<String, String>,
+#[derive(Serialize)]
+struct HFRequest {
+    inputs: String,
 }
 
-impl Memory {
-    fn load() -> Self {
-        fs::read_to_string("memory.json")
-            .ok()
-            .and_then(|data| serde_json::from_str(&data).ok())
-            .unwrap_or(Self { responses: HashMap::new() })
-    }
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Load .env (if present) for local development
+    dotenv().ok();
 
-    fn save(&self) {
-        let _ = fs::write("memory.json", serde_json::to_string_pretty(self).unwrap());
-    }
+    let hf_token = env::var("HF_TOKEN").context("HF_TOKEN environment variable not set")?;
 
-    fn clear(&mut self) {
-        self.responses.clear();
-        self.save();
-    }
-}
+    let body = HFRequest {
+        inputs: "Write a Python script that prints 'hello'".to_string(),
+    };
 
-fn main() {
-    println!("RustBot v1.0 – Chatbot complet avec apprentissage et commandes");
-    println!("Commandes disponibles : /save, /clear, /help, quit\n");
+    let client = Client::new();
+    let res = client
+        .post("https://router.huggingface.co/hf-inference/models/bigcode/starcoder2-3b")
+        .bearer_auth(hf_token)
+        .json(&body)
+        .send()
+        .await
+        .context("HTTP request failed")?;
 
-    let mut memory = Memory::load();
+    // Parse response as JSON and pretty-print it. Many HF endpoints return JSON.
+    let json: Value = res.json().await.context("Failed to parse response JSON")?;
+    println!("{}", serde_json::to_string_pretty(&json)?);
 
-    let greetings = [
-        "Bonjour, comment allez-vous ?",
-        "Content de vous revoir.",
-        "Je suis prêt à discuter.",
-    ];
-    println!("RustBot : {}", greetings.choose(&mut rand::thread_rng()).unwrap());
-
-    loop {
-        print!("Vous : ");
-        io::stdout().flush().unwrap();
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-        let input = input.trim().to_lowercase();
-
-        match input.as_str() {
-            "quit" => {
-                println!("RustBot : Au revoir !");
-                memory.save();
-                break;
-            }
-            "/save" => {
-                memory.save();
-                println!("RustBot : Mémoire sauvegardée.");
-                continue;
-            }
-            "/clear" => {
-                memory.clear();
-                println!("RustBot : Mémoire effacée.");
-                continue;
-            }
-            "/help" => {
-                println!("Commandes : /save, /clear, /help, quit");
-                continue;
-            }
-            _ => {}
-        }
-
-        if let Some(reply) = memory.responses.get(&input) {
-            println!("RustBot : {}", reply);
-        } else {
-            println!("RustBot : Je ne connais pas cette phrase. Que devrais-je répondre ?");
-            print!("Vous : ");
-            io::stdout().flush().unwrap();
-
-            let mut new_reply = String::new();
-            io::stdin().read_line(&mut new_reply).unwrap();
-            let new_reply = new_reply.trim().to_string();
-
-            memory.responses.insert(input.clone(), new_reply.clone());
-            memory.save();
-
-            println!("RustBot : D'accord, je répondrai '{}' lorsque vous direz '{}'.", new_reply, input);
-        }
-    }
+    Ok(())
 }

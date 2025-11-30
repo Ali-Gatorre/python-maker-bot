@@ -1,3 +1,8 @@
+# Ignore environment files with secrets
+.env
+
+# Rust build artifacts
+target/
 # Rust/Cargo
 /target/
 **/*.rs.bk
