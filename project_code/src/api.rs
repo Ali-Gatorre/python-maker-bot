@@ -32,3 +32,5 @@ struct HfGenerated {
 
     //rajouter si on tombe sur des cas ou la reponse se trouve dans un autre champs
 }
+
+//suite du code
