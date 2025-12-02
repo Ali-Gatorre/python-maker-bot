@@ -34,3 +34,77 @@ struct HfGenerated {
 }
 
 //suite du code
+pub async fn generate_code(prompt: &str) -> Result<String> {
+    // 1) Lire le token
+    let token = std::env::var("HF_TOKEN")
+        .context("HF_TOKEN manquant dans .env")?;
+
+    // 2) Construire l'URL du modèle
+    let url = format!("{}/bigcode/starcoder2-3b", HUGGINGFACE_BASE);
+
+    // 3) Construire le JSON
+    let body = HfRequest {
+        inputs: prompt,
+        parameters: Some(HfParameters {
+            max_new_tokens: Some(256),
+            temperature: Some(0.2),
+        }),
+    };
+
+    // 4) Construire les headers
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(&format!("Bearer {token}"))?,
+    );
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+    // 5) Envoyer la requête
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&url)
+        .headers(headers)
+        .json(&body)
+        .timeout(Duration::from_secs(60))
+        .send()
+        .await
+        .context("Erreur HTTP vers Hugging Face")?;
+
+    let status = resp.status();
+    let text_body = resp.text().await
+        .context("Impossible de lire la réponse Hugging Face")?;
+
+    if !status.is_success() {
+        return Err(anyhow!("HuggingFace erreur {status}: {}", text_body));
+    }
+
+    // 6) Essayer : JSON = tableau de HfGenerated
+    if let Ok(list) = serde_json::from_str::<Vec<HfGenerated>>(&text_body) {
+        if let Some(first) = list.first() {
+            if let Some(gt) = &first.generated_text {
+                return Ok(gt.clone());
+            }
+            if let Some(t) = &first.text {
+                return Ok(t.clone());
+            }
+        }
+    }
+
+    // 7) Essayer : JSON = objet unique de HfGenerated
+    let parsed_obj: Result<HfGenerated, _> = serde_json::from_str(&text_body);
+    if let Ok(obj) = parsed_obj {
+        if let Some(gt) = obj.generated_text {
+            return Ok(gt);
+        }
+        if let Some(t) = obj.text {
+            return Ok(t);
+        }
+    }
+
+    // 8) Sinon → erreur + body HF
+    Err(anyhow!(
+        "Impossible d'interpréter la réponse Hugging Face : {}",
+        text_body
+    ))
+}
+
