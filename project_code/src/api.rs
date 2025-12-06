@@ -30,81 +30,6 @@ struct Choice {
     message: Message,
 }
 
-pub async fn generate_code(prompt: &str) -> Result<String> {
-    // Load the token
-    let token = std::env::var("HF_TOKEN")
-        .context("HF_TOKEN missing in .env")?;
-
-    // Set the router URL (OpenAI-compatible endpoint)
-    let url = "https://router.huggingface.co/v1/chat/completions".to_string();
-
-    // Build the request body
-    let body = ChatRequest {
-        model: "Qwen/Qwen2.5-Coder-7B-Instruct".to_string(),
-        messages: vec![
-            Message {
-                role: "system".to_string(),
-                content: "You are an expert Python code generator. Generate clean, well-commented, executable Python code based on user requests. \
-                         Follow these rules:\n\
-                         1. Output ONLY valid Python code\n\
-                         2. Include helpful comments explaining the logic\n\
-                         3. Use proper Python conventions and best practices\n\
-                         4. Handle errors gracefully with try-except where appropriate\n\
-                         5. If external libraries are needed, import them at the top\n\
-                         6. Make the code production-ready and maintainable".to_string(),
-            },
-            Message {
-                role: "user".to_string(),
-                content: prompt.to_string(),
-            },
-        ],
-        max_tokens: Some(1024),
-        temperature: Some(0.2),
-    };
-
-    // Build headers
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {token}"))
-            .context("Invalid Bearer token format")?,
-    );
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-
-    // Send the request
-    let client = reqwest::Client::new();
-    let resp = client
-        .post(&url)
-        .headers(headers)
-        .json(&body)
-        .timeout(Duration::from_secs(60))
-        .send()
-        .await
-        .context("HTTP error to Hugging Face router")?;
-
-    let status = resp.status();
-    let text_body = resp
-        .text()
-        .await
-        .context("Failed to read Hugging Face response")?;
-
-    if !status.is_success() {
-        return Err(anyhow!("HuggingFace error {}: {}", status, text_body));
-    }
-
-    // Parse the response
-    let parsed: ChatResponse = serde_json::from_str(&text_body)
-        .context("Failed to parse Hugging Face JSON response")?;
-
-    let generated = parsed
-        .choices
-        .first()
-        .map(|choice| choice.message.content.clone())
-        .ok_or_else(|| anyhow!("No choices in Hugging Face response"))?;
-
-    Ok(generated)
-}
-
 /// Generate code with conversation history for multi-turn refinement
 pub async fn generate_code_with_history(messages: Vec<Message>) -> Result<String> {
     let token = std::env::var("HF_TOKEN")
@@ -173,4 +98,119 @@ pub async fn generate_code_with_history(messages: Vec<Message>) -> Result<String
         .ok_or_else(|| anyhow!("No choices in Hugging Face response"))?;
 
     Ok(generated)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_message_creation() {
+        let msg = Message {
+            role: "user".to_string(),
+            content: "test content".to_string(),
+        };
+        assert_eq!(msg.role, "user");
+        assert_eq!(msg.content, "test content");
+    }
+
+    #[test]
+    fn test_message_clone() {
+        let msg = Message {
+            role: "assistant".to_string(),
+            content: "response".to_string(),
+        };
+        let cloned = msg.clone();
+        assert_eq!(msg.role, cloned.role);
+        assert_eq!(msg.content, cloned.content);
+    }
+
+    #[test]
+    fn test_chat_request_serialization() {
+        let request = ChatRequest {
+            model: "test-model".to_string(),
+            messages: vec![
+                Message {
+                    role: "system".to_string(),
+                    content: "You are helpful".to_string(),
+                },
+                Message {
+                    role: "user".to_string(),
+                    content: "Hello".to_string(),
+                },
+            ],
+            max_tokens: Some(100),
+            temperature: Some(0.5),
+        };
+
+        let json = serde_json::to_string(&request);
+        assert!(json.is_ok());
+        
+        let json_str = json.unwrap();
+        assert!(json_str.contains("test-model"));
+        assert!(json_str.contains("system"));
+        assert!(json_str.contains("user"));
+        assert!(json_str.contains("Hello"));
+    }
+
+    #[test]
+    fn test_chat_response_deserialization() {
+        let json = r#"{
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "print('Hello, World!')"
+                    }
+                }
+            ]
+        }"#;
+
+        let response: Result<ChatResponse, _> = serde_json::from_str(json);
+        assert!(response.is_ok());
+        
+        let response = response.unwrap();
+        assert_eq!(response.choices.len(), 1);
+        assert_eq!(response.choices[0].message.role, "assistant");
+        assert!(response.choices[0].message.content.contains("print"));
+    }
+
+    #[test]
+    fn test_message_vector_operations() {
+        let mut messages = vec![
+            Message {
+                role: "user".to_string(),
+                content: "First".to_string(),
+            },
+            Message {
+                role: "assistant".to_string(),
+                content: "Second".to_string(),
+            },
+        ];
+
+        assert_eq!(messages.len(), 2);
+        
+        messages.push(Message {
+            role: "user".to_string(),
+            content: "Third".to_string(),
+        });
+
+        assert_eq!(messages.len(), 3);
+        assert_eq!(messages.last().unwrap().content, "Third");
+    }
+
+    #[test]
+    fn test_optional_parameters() {
+        let request = ChatRequest {
+            model: "test".to_string(),
+            messages: vec![],
+            max_tokens: None,
+            temperature: None,
+        };
+
+        let json = serde_json::to_string(&request).unwrap();
+        // Optional fields should not appear in JSON when None
+        assert!(!json.contains("max_tokens"));
+        assert!(!json.contains("temperature"));
+    }
 }
