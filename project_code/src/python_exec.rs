@@ -2,7 +2,7 @@ use crate::utils::ensure_dir;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 /// Résultat de l'exécution d'un script Python.
@@ -55,7 +55,7 @@ impl CodeExecutor {
                     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
                     let stderr = String::from_utf8_lossy(&out.stderr).to_string();
                     return Ok(CodeExecutionResult {
-                        script_path,
+                        script_path: script_path.clone(), // Clone if needed
                         stdout,
                         stderr,
                     });
