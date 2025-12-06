@@ -3,7 +3,108 @@ use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-const HUGGINGFACE_BASE: &str = "https://api-inference.huggingface.co/models";
+#[derive(Serialize)]
+struct ChatRequest {
+    model: String,
+    messages: Vec<Message>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+    // Add more parameters as needed (e.g., top_p, stream)
+}
+
+#[derive(Serialize, Deserialize)]
+struct Message {
+    role: String,
+    content: String,
+}
+
+#[derive(Deserialize)]
+struct ChatResponse {
+    choices: Vec<Choice>,
+}
+
+#[derive(Deserialize)]
+struct Choice {
+    message: Message,
+}
+
+pub async fn generate_code(prompt: &str) -> Result<String> {
+    // Load the token
+    let token = std::env::var("HF_TOKEN")
+        .context("HF_TOKEN missing in .env")?;
+
+    // Set the router URL (OpenAI-compatible endpoint)
+    let url = "https://router.huggingface.co/v1/chat/completions".to_string();
+
+    // Build the request body
+    let body = ChatRequest {
+        model: "Qwen/Qwen2.5-Coder-7B-Instruct".to_string(),
+        /* messages: vec![Message {
+            role: "user".to_string(),
+            content: prompt.to_string(),
+        }], */
+        messages: vec![
+            Message {
+                role: "system".to_string(),
+                content: "You are a Python code generator. Respond only with valid, executable Python code. No explanations, markdown, or extra text.".to_string(),
+            },
+            Message {
+                role: "user".to_string(),
+                content: prompt.to_string(),
+            },
+        ],
+        max_tokens: Some(1024),
+        temperature: Some(0.2),
+    };
+
+    // Build headers
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(&format!("Bearer {token}"))
+            .context("Invalid Bearer token format")?,
+    );
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+
+    // Send the request
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(&url)
+        .headers(headers)
+        .json(&body)
+        .timeout(Duration::from_secs(60))
+        .send()
+        .await
+        .context("HTTP error to Hugging Face router")?;
+
+    let status = resp.status();
+    let text_body = resp
+        .text()
+        .await
+        .context("Failed to read Hugging Face response")?;
+
+    if !status.is_success() {
+        return Err(anyhow!("HuggingFace error {}: {}", status, text_body));
+    }
+
+    // Parse the response
+    let parsed: ChatResponse = serde_json::from_str(&text_body)
+        .context("Failed to parse Hugging Face JSON response")?;
+
+    let generated = parsed
+        .choices
+        .first()
+        .map(|choice| choice.message.content.clone())
+        .ok_or_else(|| anyhow!("No choices in Hugging Face response"))?;
+
+    Ok(generated)
+}
+
+/* // HuggingFace has deprecated free inference API as of late 2024
+// For now, we'll use a simple fallback that generates basic Python code
+const HUGGINGFACE_API: &str = "https://api-inference.huggingface.co/models";
 
 #[derive(Serialize)] //pour ecrire la requette json
 struct HfRequest<'a> {  //pour que la variable a continue d'exister assez longtemps pour faire la requette
@@ -39,8 +140,8 @@ pub async fn generate_code(prompt: &str) -> Result<String> {
     let token = std::env::var("HF_TOKEN")
         .context("HF_TOKEN manquant dans .env")?;
 
-    // 2) Construire l'URL du modèle
-    let url = format!("{}/bigcode/starcoder2-3b", HUGGINGFACE_BASE);
+    // 2) Construire l'URL du modèle - using NEW router endpoint
+    let url = "https://api-inference.huggingface.co/models/bigcode/starcoder2-3b".to_string();
 
     // 3) Construire le JSON
     let body = HfRequest {
@@ -108,3 +209,4 @@ pub async fn generate_code(prompt: &str) -> Result<String> {
     ))
 }
 
+ */
