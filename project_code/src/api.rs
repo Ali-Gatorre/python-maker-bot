@@ -50,24 +50,32 @@ pub async fn generate_code_with_history(messages: Vec<Message>) -> Result<String
                  7. Handle errors gracefully with try-except where appropriate\n\
                  8. If external libraries are needed, import them at the top\n\
                  9. Make the code production-ready, feature-complete, and maintainable\n\
-                 10. The code must run immediately when executed with python3 <file>.py WITHOUT ERRORS\n\
+                 10. The code must run immediately when executed with python3 <file>.py WITHOUT ANY ERRORS\n\
+                 \n\
+                 CRITICAL BUG PREVENTION:\n\
+                 - DEFINE ALL VARIABLES before using them (e.g., if you use RED, define RED = (255, 0, 0) first)\n\
+                 - DEFINE ALL COLOR CONSTANTS at the top (WHITE, BLACK, RED, GREEN, BLUE, YELLOW, etc.)\n\
+                 - CHECK for empty lists before accessing indices: if len(my_list) > 0: my_list[0]\n\
+                 - INITIALIZE all class attributes in __init__ (e.g., self.passed = False)\n\
+                 - USE try-except for any operations that could fail\n\
+                 - TEST all variable references - never use undefined variables\n\
                  \n\
                  FOR GAMES:\n\
                  - Include COMPLETE game mechanics (collision detection, scoring, game over, restart)\n\
-                 - Use VISIBLE, contrasting colors (avoid dark colors on dark backgrounds)\n\
-                 - Add proper game states (menu, playing, game over)\n\
-                 - Include user instructions (controls, how to play)\n\
+                 - Define ALL colors at the top: WHITE, BLACK, RED, GREEN, BLUE, YELLOW\n\
+                 - Use VISIBLE, contrasting colors (avoid dark on dark)\n\
+                 - Add proper game states (playing, game_over) with state variables\n\
+                 - Include user instructions in comments or on-screen text\n\
                  - Make it FUN and POLISHED, not just a basic prototype\n\
-                 - CRITICAL: Check for empty lists/groups before accessing indices (if len(list) > 0)\n\
-                 - CRITICAL: Initialize all variables before using them (avoid AttributeError)\n\
-                 - CRITICAL: Test collision detection with proper bounds checking\n\
-                 - Use sprite groups properly with pygame (GroupSingle for single sprites, Group for multiple)\n\
+                 - Initialize ALL sprite attributes (self.passed = False, self.scored = False, etc.)\n\
+                 - Check sprite group is not empty before collision: if len(group) > 0 and pygame.sprite.spritecollide(...)\n\
+                 - Use proper game loop with state management (if game_over: show game over, else: play game)\n\
                  - DO NOT load external files (sounds, images, fonts) - code must be SELF-CONTAINED\n\
                  - Use pygame.font.Font(None, size) for default fonts only\n\
-                 - Skip sound effects or use simple alternatives (print statements for feedback)\n\
-                 - Generate all graphics programmatically with pygame.draw and Surface objects\n\
-                 - Include pause functionality and proper exit handling\n\
-                 - ENSURE the game runs without crashes for at least 5 minutes of gameplay".to_string(),
+                 - Skip sound effects or print to console for feedback\n\
+                 - Generate all graphics with pygame.draw and Surface.fill()\n\
+                 - Proper restart: reset all variables, empty sprite groups, recreate sprites\n\
+                 - ENSURE the game runs without NameError, AttributeError, or IndexError".to_string(),
     }];
     
     // Add conversation history
