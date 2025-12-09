@@ -11,7 +11,6 @@ struct ChatRequest {
     max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
-    // Add more parameters as needed (e.g., top_p, stream)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -40,14 +39,35 @@ pub async fn generate_code_with_history(messages: Vec<Message>) -> Result<String
     // Ensure system message is at the beginning
     let mut full_messages = vec![Message {
         role: "system".to_string(),
-        content: "You are an expert Python code generator. Generate clean, well-commented, executable Python code based on user requests. \
-                 Follow these rules:\n\
-                 1. Output ONLY valid Python code\n\
-                 2. Include helpful comments explaining the logic\n\
-                 3. Use proper Python conventions and best practices\n\
-                 4. Handle errors gracefully with try-except where appropriate\n\
-                 5. If external libraries are needed, import them at the top\n\
-                 6. Make the code production-ready and maintainable".to_string(),
+        content: "You are an expert Python code generator. Generate clean, well-commented, COMPLETE and POLISHED executable Python code based on user requests. \
+                 CRITICAL RULES:\n\
+                 1. Output ONLY valid, executable Python code - NO markdown text, NO explanations outside comments\n\
+                 2. DO NOT include phrases like 'Here is the code' or 'Step 1:' - these cause syntax errors\n\
+                 3. DO NOT use markdown headings (###, ##, #) outside of Python comments\n\
+                 4. Start directly with Python code (imports, functions, or main logic)\n\
+                 5. Include helpful comments explaining the logic using Python's # syntax\n\
+                 6. Use proper Python conventions and best practices\n\
+                 7. Handle errors gracefully with try-except where appropriate\n\
+                 8. If external libraries are needed, import them at the top\n\
+                 9. Make the code production-ready, feature-complete, and maintainable\n\
+                 10. The code must run immediately when executed with python3 <file>.py WITHOUT ERRORS\n\
+                 \n\
+                 FOR GAMES:\n\
+                 - Include COMPLETE game mechanics (collision detection, scoring, game over, restart)\n\
+                 - Use VISIBLE, contrasting colors (avoid dark colors on dark backgrounds)\n\
+                 - Add proper game states (menu, playing, game over)\n\
+                 - Include user instructions (controls, how to play)\n\
+                 - Make it FUN and POLISHED, not just a basic prototype\n\
+                 - CRITICAL: Check for empty lists/groups before accessing indices (if len(list) > 0)\n\
+                 - CRITICAL: Initialize all variables before using them (avoid AttributeError)\n\
+                 - CRITICAL: Test collision detection with proper bounds checking\n\
+                 - Use sprite groups properly with pygame (GroupSingle for single sprites, Group for multiple)\n\
+                 - DO NOT load external files (sounds, images, fonts) - code must be SELF-CONTAINED\n\
+                 - Use pygame.font.Font(None, size) for default fonts only\n\
+                 - Skip sound effects or use simple alternatives (print statements for feedback)\n\
+                 - Generate all graphics programmatically with pygame.draw and Surface objects\n\
+                 - Include pause functionality and proper exit handling\n\
+                 - ENSURE the game runs without crashes for at least 5 minutes of gameplay".to_string(),
     }];
     
     // Add conversation history
@@ -56,7 +76,7 @@ pub async fn generate_code_with_history(messages: Vec<Message>) -> Result<String
     let body = ChatRequest {
         model: "Qwen/Qwen2.5-Coder-7B-Instruct".to_string(),
         messages: full_messages,
-        max_tokens: Some(1024),
+        max_tokens: Some(8192),  // Increased for complete games and complex code
         temperature: Some(0.2),
     };
 

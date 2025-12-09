@@ -13,17 +13,109 @@ pub fn ensure_dir(path: &Path) -> Result<()> {
 
 /// Extract Python code from a response that might contain markdown code blocks
 pub fn extract_python_code(response: &str) -> String {
-    // Try to match markdown code blocks with optional language identifier
-    let code_block_re = Regex::new(r"```(?:python)?\s*\n([\s\S]*?)\n```").unwrap();
+    // Try to match complete markdown code blocks first
+    let code_block_re = Regex::new(r"```\s*(?:python)?\s*([\s\S]*?)\s*```").unwrap();
     
-    if let Some(captures) = code_block_re.captures(response) {
-        if let Some(code) = captures.get(1) {
-            return code.as_str().trim().to_string();
+    // Find all complete code blocks and concatenate them
+    let mut all_code = String::new();
+    for capture in code_block_re.captures_iter(response) {
+        if let Some(code) = capture.get(1) {
+            let code_str = code.as_str().trim();
+            if !code_str.is_empty() && !is_just_markdown_text(code_str) {
+                if !all_code.is_empty() {
+                    all_code.push_str("\n\n");
+                }
+                all_code.push_str(code_str);
+            }
         }
     }
     
-    // If no markdown block found, return trimmed response as-is
-    response.trim().to_string()
+    if !all_code.is_empty() {
+        return all_code;
+    }
+    
+    // If no complete blocks, try to extract from incomplete/truncated response
+    // Pattern: ```python\n...code... (no closing backticks)
+    let incomplete_block_re = Regex::new(r"```\s*(?:python)?\s*\n([\s\S]*)$").unwrap();
+    if let Some(capture) = incomplete_block_re.captures(response) {
+        if let Some(code) = capture.get(1) {
+            let code_str = code.as_str().trim();
+            if !code_str.is_empty() && !is_just_markdown_text(code_str) {
+                return code_str.to_string();
+            }
+        }
+    }
+    
+    // If no markdown block found, clean up markdown artifacts and return
+    let cleaned = clean_markdown_artifacts(response.trim());
+    
+    // If the result is mostly markdown text, return a helpful comment
+    if is_just_markdown_text(&cleaned) {
+        return "# No Python code was generated.\n# Please try rephrasing your request or use /refine to ask for actual code.".to_string();
+    }
+    
+    cleaned
+}
+
+/// Check if text is just markdown explanations without actual code
+fn is_just_markdown_text(text: &str) -> bool {
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.is_empty() {
+        return true;
+    }
+    
+    // Count lines that look like code vs markdown text
+    let mut code_lines = 0;
+    let mut text_lines = 0;
+    
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        
+        // Markdown indicators
+        if trimmed.starts_with("###") || 
+           trimmed.starts_with("##") || 
+           trimmed.starts_with("#") && !trimmed.contains("=") && !trimmed.contains("import") ||
+           trimmed.starts_with("Here is") ||
+           trimmed.starts_with("Step ") ||
+           trimmed.starts_with("The ") ||
+           trimmed.contains("code for") {
+            text_lines += 1;
+        } else if trimmed.contains("def ") || 
+                  trimmed.contains("class ") || 
+                  trimmed.contains("import ") || 
+                  trimmed.contains("=") || 
+                  trimmed.contains("(") && trimmed.contains(")") {
+            code_lines += 1;
+        }
+    }
+    
+    // If mostly text or no code at all, it's just markdown
+    text_lines > code_lines || code_lines == 0
+}
+
+/// Remove common markdown artifacts from text
+fn clean_markdown_artifacts(text: &str) -> String {
+    let mut result = String::new();
+    
+    for line in text.lines() {
+        let trimmed = line.trim();
+        
+        // Skip obvious markdown headings and explanations
+        if trimmed.starts_with("###") || 
+           trimmed.starts_with("##") ||
+           (trimmed.starts_with("Here is") && trimmed.contains(":")) ||
+           (trimmed.starts_with("Step ") && trimmed.contains(":")) {
+            continue;
+        }
+        
+        result.push_str(line);
+        result.push('\n');
+    }
+    
+    result.trim().to_string()
 }
 
 /// Extract all import statements from Python code
@@ -124,6 +216,38 @@ mod tests {
         let input = "```python\ndef hello():\n    print('world')\n\nhello()\n```";
         let result = extract_python_code(input);
         assert_eq!(result, "def hello():\n    print('world')\n\nhello()");
+    }
+
+    #[test]
+    fn test_extract_python_code_with_markdown_explanation() {
+        let input = "### Step 2: Create the Game Code\n\nHere is the complete code for the Flappy Bird game:";
+        let result = extract_python_code(input);
+        assert!(result.contains("No Python code was generated"));
+    }
+
+    #[test]
+    fn test_extract_python_code_mixed_markdown_and_code() {
+        let input = "Here is your code:\n```python\nprint('hello')\n```\nThis code prints hello.";
+        let result = extract_python_code(input);
+        assert_eq!(result, "print('hello')");
+    }
+
+    #[test]
+    fn test_extract_python_code_multiple_blocks() {
+        let input = "```python\nimport pygame\n```\n\nSome text here\n\n```python\nscreen = pygame.display.set_mode((800, 600))\n```";
+        let result = extract_python_code(input);
+        // Should extract and concatenate both code blocks
+        assert!(result.contains("import pygame"));
+        assert!(result.contains("pygame.display"));
+    }
+
+    #[test]
+    fn test_is_just_markdown_text() {
+        let markdown = "### Step 1\nHere is the code:";
+        assert!(is_just_markdown_text(markdown));
+        
+        let code = "import pygame\npygame.init()";
+        assert!(!is_just_markdown_text(code));
     }
 
     #[test]

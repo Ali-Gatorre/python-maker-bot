@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 use std::fs;
 use crate::api::{self, Message};
-use crate::python_exec::CodeExecutor;
+use crate::python_exec::{CodeExecutor, ExecutionMode};
 use crate::utils::extract_python_code;
 use crate::logger::{Logger, SessionMetrics};
 use colored::*;
@@ -9,7 +9,7 @@ use colored::*;
 // Fonction publique utilisable depuis main.rs affichant un bandeau de bienvenue 
 pub fn print_banner() {
     println!("{}", "====================================".bright_cyan());
-    println!("{}", "        PYTHON MAKER BOT v0.2       ".bright_cyan().bold());
+    println!("{}", "      PYTHON MAKER BOT v0.2.1       ".bright_cyan().bold());
     println!("{}", "====================================".bright_cyan());
     println!("{}", " AI-Powered Python Code Generator".bright_white());
     println!("{}\n", " Type /help for commands or /quit to exit".dimmed());
@@ -80,6 +80,8 @@ pub async fn start_repl() {
             println!("  {} <file> - Save last code to a file", "/save".green());
             println!("  {}      - Show conversation history", "/history".green());
             println!("  {}        - Show session statistics", "/stats".green());
+            println!("  {}         - List all generated scripts", "/list".green());
+            println!("  {} <file>  - Execute a previously generated script", "/run".green());
             println!();
             continue;
         }
@@ -141,6 +143,111 @@ pub async fn start_repl() {
             match fs::write(&filename, &last_generated_code) {
                 Ok(_) => println!("{} {}", "✓ Code saved to:".green(), filename.bright_white()),
                 Err(e) => println!("{} {}", "✗ Failed to save file:".red(), e),
+            }
+            continue;
+        }
+
+        if prompt == "/list" {
+            match fs::read_dir("generated") {
+                Ok(entries) => {
+                    let mut scripts: Vec<_> = entries
+                        .filter_map(|e| e.ok())
+                        .filter(|e| e.path().extension().map_or(false, |ext| ext == "py"))
+                        .collect();
+                    
+                    if scripts.is_empty() {
+                        println!("{}", "No generated scripts found.".yellow());
+                    } else {
+                        scripts.sort_by_key(|e| e.file_name());
+                        println!("\n{}", "Generated Scripts:".bright_cyan().bold());
+                        for (i, entry) in scripts.iter().enumerate() {
+                            println!("  {}. {}", i + 1, entry.file_name().to_string_lossy().bright_white());
+                        }
+                        println!();
+                    }
+                }
+                Err(e) => println!("{} {}", "✗ Failed to list scripts:".red(), e),
+            }
+            continue;
+        }
+
+        if prompt.starts_with("/run") {
+            let parts: Vec<&str> = prompt.split_whitespace().collect();
+            let filename = if parts.len() > 1 {
+                parts[1].to_string()
+            } else {
+                ask_user("Enter script filename (e.g., script_20251209_152023.py): ")
+            };
+            
+            if filename.is_empty() {
+                println!("{}", "Run cancelled.".yellow());
+                continue;
+            }
+            
+            let script_path = if filename.starts_with("generated/") {
+                filename
+            } else {
+                format!("generated/{}", filename)
+            };
+            
+            match fs::read_to_string(&script_path) {
+                Ok(code) => {
+                    println!("\n{}", format!("Running: {}", script_path).bright_cyan());
+                    
+                    // Check for dependencies
+                    let deps = executor.detect_dependencies(&code);
+                    if !deps.is_empty() {
+                        println!("\n{} {}", 
+                            "⚠️  Detected non-standard dependencies:".yellow(),
+                            deps.join(", ").bright_yellow());
+                        if confirm("Install these dependencies?") {
+                            if let Err(e) = executor.install_packages(&deps) {
+                                println!("{} {}", "⚠️  Failed to install dependencies:".yellow(), e);
+                                println!("{}", "Proceeding anyway...".dimmed());
+                            }
+                        }
+                    }
+
+                    // Detect if interactive mode is needed
+                    let mode = if executor.needs_interactive_mode(&code) {
+                        println!("{}", "🎮 Interactive mode detected (pygame/input/GUI)".bright_magenta().bold());
+                        println!("{}", "   Running with inherited stdio for user interaction...".dimmed());
+                        ExecutionMode::Interactive
+                    } else {
+                        ExecutionMode::Captured
+                    };
+
+                    match executor.run_existing_script(&script_path, mode) {
+                        Ok(result) => {
+                            let success = result.exit_code.unwrap_or(1) == 0 
+                                || (result.stderr.is_empty() || !result.stderr.contains("Error"));
+                            if success {
+                                metrics.successful_executions += 1;
+                            } else {
+                                metrics.failed_executions += 1;
+                            }
+                            
+                            let _ = logger.log_execution(success, &result.stdout);
+                            
+                            println!("\n{}", "━━━━━━━━━━━ Execution Result ━━━━━━━━━━━".bright_blue().bold());
+                            if !result.stdout.is_empty() {
+                                println!("\n{}:", "STDOUT".green().bold());
+                                println!("{}", result.stdout);
+                            }
+                            if !result.stderr.is_empty() {
+                                println!("\n{}:", "STDERR".red().bold());
+                                println!("{}", result.stderr);
+                            }
+                            println!("{}", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".bright_blue());
+                        }
+                        Err(e) => {
+                            metrics.failed_executions += 1;
+                            let _ = logger.log_error(&format!("Execution error: {}", e));
+                            println!("{} {}", "✗ Execution error:".red(), e);
+                        }
+                    }
+                }
+                Err(e) => println!("{} {}", "✗ Failed to read script:".red(), e),
             }
             continue;
         }
@@ -210,9 +317,19 @@ pub async fn start_repl() {
                         }
                     }
 
-                    match executor.write_and_run(&code) {
+                    // Detect if interactive mode is needed
+                    let mode = if executor.needs_interactive_mode(&code) {
+                        println!("{}", "🎮 Interactive mode detected (pygame/input/GUI)".bright_magenta().bold());
+                        println!("{}", "   Running with inherited stdio for user interaction...".dimmed());
+                        ExecutionMode::Interactive
+                    } else {
+                        ExecutionMode::Captured
+                    };
+
+                    match executor.write_and_run_with_mode(&code, mode) {
                         Ok(result) => {
-                            let success = result.stderr.is_empty() || !result.stderr.contains("Error");
+                            let success = result.exit_code.unwrap_or(1) == 0 
+                                || (result.stderr.is_empty() || !result.stderr.contains("Error"));
                             if success {
                                 metrics.successful_executions += 1;
                             } else {

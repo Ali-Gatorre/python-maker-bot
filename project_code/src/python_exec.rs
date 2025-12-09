@@ -3,13 +3,23 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
+
+/// Mode d'exécution pour les scripts Python
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ExecutionMode {
+    /// Mode par défaut: capture stdout/stderr
+    Captured,
+    /// Mode interactif: hérite stdio (pour jeux, input utilisateur)
+    Interactive,
+}
 
 /// Résultat de l'exécution d'un script Python.
 pub struct CodeExecutionResult {
     pub script_path: PathBuf,
     pub stdout: String,
     pub stderr: String,
+    pub exit_code: Option<i32>,
 }
 
 /// Responsable de l'écriture des scripts Python sur le disque et de leur exécution.
@@ -81,11 +91,34 @@ impl CodeExecutor {
         }))
     }
 
+    /// Détecte si le code nécessite une exécution interactive (pygame, input(), etc.)
+    pub fn needs_interactive_mode(&self, code: &str) -> bool {
+        let interactive_keywords = [
+            "pygame",
+            "input(",
+            "turtle",
+            "tkinter",
+            "curses",
+            "getpass",
+            "cv2.imshow",
+            "plt.show",
+            "matplotlib",
+        ];
+        
+        interactive_keywords.iter().any(|keyword| code.contains(keyword))
+    }
+
     /// Écrit un script Python dans un fichier et l'exécute avec l'interpréteur `python` ou `python3`.
     ///
     /// Attention : ce code exécute du Python généré automatiquement.
     /// À n'utiliser que dans un environnement de test contrôlé.
+    #[allow(dead_code)] // Used by tests
     pub fn write_and_run(&self, code: &str) -> Result<CodeExecutionResult> {
+        self.write_and_run_with_mode(code, ExecutionMode::Captured)
+    }
+
+    /// Écrit et exécute un script Python avec le mode d'exécution spécifié.
+    pub fn write_and_run_with_mode(&self, code: &str, mode: ExecutionMode) -> Result<CodeExecutionResult> {
         // Nom de fichier basé sur un timestamp pour éviter les collisions.
         let ts = Utc::now().format("%Y%m%d_%H%M%S");
         let filename = format!("script_{ts}.py");
@@ -94,30 +127,78 @@ impl CodeExecutor {
         fs::write(&script_path, code)
             .with_context(|| format!("Could not write the script {:?}", script_path))?;
 
+        self.execute_script(&script_path, mode)
+    }
+
+    /// Exécute un script Python existant avec le mode d'exécution spécifié.
+    pub fn run_existing_script(&self, script_path: &str, mode: ExecutionMode) -> Result<CodeExecutionResult> {
+        let path = PathBuf::from(script_path);
+        if !path.exists() {
+            return Err(anyhow::anyhow!("Script not found: {}", script_path));
+        }
+        self.execute_script(&path, mode)
+    }
+
+    /// Fonction interne pour exécuter un script Python.
+    fn execute_script(&self, script_path: &PathBuf, mode: ExecutionMode) -> Result<CodeExecutionResult> {
         // On essaie d'abord `python3`, puis `python` si besoin.
         let python_cmds = ["python3", "python"];
 
         let mut last_err: Option<anyhow::Error> = None;
 
         for cmd in python_cmds {
-            let output = Command::new(cmd)
-                .arg(&script_path)
-                .output();
+            match mode {
+                ExecutionMode::Interactive => {
+                    // Mode interactif: hérite stdin/stdout/stderr pour l'interaction utilisateur
+                    let child = Command::new(cmd)
+                        .arg(&script_path)
+                        .stdin(Stdio::inherit())
+                        .stdout(Stdio::inherit())
+                        .stderr(Stdio::inherit())
+                        .spawn();
 
-            match output {
-                Ok(out) => {
-                    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-                    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-                    return Ok(CodeExecutionResult {
-                        script_path: script_path.clone(), // Clone if needed
-                        stdout,
-                        stderr,
-                    });
+                    match child {
+                        Ok(mut process) => {
+                            let status = process.wait()
+                                .with_context(|| format!("Failed to wait for process with {}", cmd))?;
+                            
+                            return Ok(CodeExecutionResult {
+                                script_path: script_path.clone(),
+                                stdout: String::from("[Interactive mode - output displayed directly]"),
+                                stderr: String::new(),
+                                exit_code: status.code(),
+                            });
+                        }
+                        Err(e) => {
+                            last_err = Some(anyhow::anyhow!(
+                                "Failed to spawn interactive process with `{cmd}`: {e}"
+                            ));
+                        }
+                    }
                 }
-                Err(e) => {
-                    last_err = Some(anyhow::anyhow!(
-                        "Failed with command `{cmd}`: {e}"
-                    ));
+                ExecutionMode::Captured => {
+                    // Mode capturé: récupère stdout/stderr
+                    let output = Command::new(cmd)
+                        .arg(&script_path)
+                        .output();
+
+                    match output {
+                        Ok(out) => {
+                            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+                            let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+                            return Ok(CodeExecutionResult {
+                                script_path: script_path.clone(),
+                                stdout,
+                                stderr,
+                                exit_code: out.status.code(),
+                            });
+                        }
+                        Err(e) => {
+                            last_err = Some(anyhow::anyhow!(
+                                "Failed with command `{cmd}`: {e}"
+                            ));
+                        }
+                    }
                 }
             }
         }
@@ -233,5 +314,44 @@ mod tests {
         let result = executor.install_packages(&[]);
         assert!(result.is_ok());
         let _ = fs::remove_dir_all("test_temp");
+    }
+
+    #[test]
+    fn test_needs_interactive_mode_pygame() {
+        let executor = CodeExecutor::new("test_temp").unwrap();
+        let code = "import pygame\npygame.init()";
+        assert!(executor.needs_interactive_mode(code));
+        let _ = fs::remove_dir_all("test_temp");
+    }
+
+    #[test]
+    fn test_needs_interactive_mode_input() {
+        let executor = CodeExecutor::new("test_temp").unwrap();
+        let code = "name = input('Enter your name: ')";
+        assert!(executor.needs_interactive_mode(code));
+        let _ = fs::remove_dir_all("test_temp");
+    }
+
+    #[test]
+    fn test_needs_interactive_mode_simple_script() {
+        let executor = CodeExecutor::new("test_temp").unwrap();
+        let code = "print('Hello, World!')";
+        assert!(!executor.needs_interactive_mode(code));
+        let _ = fs::remove_dir_all("test_temp");
+    }
+
+    #[test]
+    fn test_needs_interactive_mode_matplotlib() {
+        let executor = CodeExecutor::new("test_temp").unwrap();
+        let code = "import matplotlib.pyplot as plt\nplt.show()";
+        assert!(executor.needs_interactive_mode(code));
+        let _ = fs::remove_dir_all("test_temp");
+    }
+
+    #[test]
+    fn test_execution_mode_enum() {
+        assert_eq!(ExecutionMode::Captured, ExecutionMode::Captured);
+        assert_eq!(ExecutionMode::Interactive, ExecutionMode::Interactive);
+        assert_ne!(ExecutionMode::Captured, ExecutionMode::Interactive);
     }
 }
