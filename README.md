@@ -307,4 +307,4 @@ MIT License - see LICENSE file for details
 
 ---
 
-**Made with ❤️ by Alvaro Serero, Ali Daubale, Chloé Daunas and Ovia Chanemouganandam**
+**Made with ❤️ by Alvaro Serero, Ali Dabale, Chloé Daunas and Ovia Chanemouganandam**
