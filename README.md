@@ -11,7 +11,7 @@ A Rust-based interactive shell that leverages AI language models to generate, re
 ## ✨ Features
 
 ### 🎯 Core Functionality
-- **AI-Powered Code Generation**: Uses HuggingFace's Qwen2.5-Coder-7B-Instruct model for high-quality Python code (configurable)
+- **AI-Powered Code Generation**: Uses HuggingFace's Qwen2.5-Coder-32B-Instruct model for high-quality Python code (configurable)
 - **Interactive REPL**: Easy-to-use command-line interface with helpful commands
 - **Automatic Code Execution**: Run generated Python scripts directly from the shell
 - **Smart Code Extraction**: Handles markdown-formatted responses and extracts clean Python code
@@ -169,7 +169,7 @@ project_code/
 ### Technology Stack
 
 - **Language**: Rust 2021 Edition
-- **AI Model**: Qwen/Qwen2.5-Coder-7B-Instruct (HuggingFace) — configurable
+- **AI Model**: Qwen/Qwen2.5-Coder-32B-Instruct (HuggingFace) — configurable
 - **Key Dependencies**:
   - `reqwest`: HTTP client for API calls
   - `tokio`: Async runtime
@@ -195,7 +195,7 @@ Create an optional `pymakebot.toml` in the project directory or your home direct
 
 ```toml
 # AI model settings
-model = "Qwen/Qwen2.5-Coder-7B-Instruct"
+model = "Qwen/Qwen2.5-Coder-32B-Instruct"
 api_url = "https://router.huggingface.co/v1/chat/completions"
 max_tokens = 16284
 temperature = 0.2
