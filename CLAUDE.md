@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Python Maker Bot (v0.2.1) is an AI-powered Python code generator written in Rust. It provides an interactive REPL that uses HuggingFace's Qwen2.5-Coder-7B-Instruct model (configurable) to generate, refine, and execute Python code. The Rust source lives in `project_code/`.
+Python Maker Bot (v0.2.1) is an AI-powered Python code generator written in Rust. It provides an interactive REPL that uses HuggingFace's Qwen2.5-Coder-32B-Instruct model (configurable) to generate, refine, and execute Python code. The Rust source lives in `project_code/`.
 
 ## Build & Development Commands
 
@@ -30,7 +30,7 @@ Requires a `HF_TOKEN` in a `.env` file at the project root or `project_code/` di
 Optional `pymakebot.toml` file (load chain: `./pymakebot.toml` → `~/pymakebot.toml` → defaults). All fields are optional:
 
 ```toml
-model = "Qwen/Qwen2.5-Coder-7B-Instruct"
+model = "Qwen/Qwen2.5-Coder-32B-Instruct"
 api_url = "https://router.huggingface.co/v1/chat/completions"
 max_tokens = 16284
 temperature = 0.2

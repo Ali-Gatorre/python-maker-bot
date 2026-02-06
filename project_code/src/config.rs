@@ -21,7 +21,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            model: "Qwen/Qwen2.5-Coder-7B-Instruct".to_string(),
+            model: "Qwen/Qwen2.5-Coder-32B-Instruct".to_string(),
             api_url: "https://router.huggingface.co/v1/chat/completions".to_string(),
             max_tokens: 16284,
             temperature: 0.2,
@@ -68,7 +68,7 @@ mod tests {
     #[test]
     fn test_default_config() {
         let cfg = AppConfig::default();
-        assert_eq!(cfg.model, "Qwen/Qwen2.5-Coder-7B-Instruct");
+        assert_eq!(cfg.model, "Qwen/Qwen2.5-Coder-32B-Instruct");
         assert_eq!(cfg.max_tokens, 16284);
         assert_eq!(cfg.temperature, 0.2);
         assert_eq!(cfg.execution_timeout_secs, 30);
